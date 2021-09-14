@@ -1,0 +1,4 @@
+create_table("rooms") {
+  t.Column("id", "uuid", {primary: true})
+  t.Column("room_name", "string", {})
+}

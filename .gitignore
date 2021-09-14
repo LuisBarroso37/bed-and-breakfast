@@ -1,1 +1,4 @@
 .idea
+coverage.out
+database.yml
+.DS_Store

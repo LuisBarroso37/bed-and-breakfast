@@ -1,0 +1,4 @@
+create_table("restrictions") {
+  t.Column("id", "uuid", {primary: true})
+  t.Column("restriction_name", "string", {})
+}
