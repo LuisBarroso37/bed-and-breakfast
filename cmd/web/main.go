@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/config"
+	"github.com/LuisBarroso37/bed-and-breakfast/internal/driver"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/handlers"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/helpers"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/models"
@@ -24,10 +25,12 @@ var session *scs.SessionManager
 
 func main() {
 	// Setup global configuration
-	err := run()
+	pool, err := run()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	defer pool.SQL.Close()
 
   // Create server
 	server := &http.Server{
@@ -43,10 +46,14 @@ func main() {
   }
 }
 
-func run() error {
+func run() (*driver.DB, error) {
 	// What we want to store in the session in global config
 	gob.Register(models.Reservation{})
-
+	gob.Register(models.Room{})
+	gob.Register(models.RoomRestriction{})
+	gob.Register(models.User{})
+	gob.Register(models.Restriction{})
+ 
 	// Change this to true when in production
 	app.InProduction = false
 
@@ -64,12 +71,20 @@ func run() error {
 	// Set session in global config
 	app.Session = session
 
+	// Connect to database
+	log.Println("Connecting to database...")
+	pool, err := driver.ConnectSQL("host=localhost port=5432 dbname=bookings user=postgres password=password")
+	if err != nil {
+		log.Fatal("Cannot connect to database")
+	}
+	log.Println("Connected to database")
+
 	// Get all template pages
 	templates, err := render.GetTemplatePages()
 	if err != nil {
 		log.Fatal("Cannot get template pages")
 		
-		return err
+		return nil, err
 	}
 
 	// Store template pages in the app cache
@@ -80,11 +95,11 @@ func run() error {
 	render.StoreAppConfig(&app)
 
 	// Create a repository and set it in the 'handlers' package
-	repo := handlers.NewRepository(&app)
+	repo := handlers.NewRepository(&app, pool)
 	handlers.SetRepository(repo)
 
 	// Store app configuration in 'helpers' package
 	helpers.StoreAppConfig(&app)
 
-	return nil
+	return pool, nil
 }

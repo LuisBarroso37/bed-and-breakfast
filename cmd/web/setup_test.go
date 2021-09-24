@@ -13,3 +13,5 @@ func TestMain(m *testing.M) {
 type testHandler struct {}
 
 func (handler *testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
+
+// go test -coverprofile=coverage.out && go tool cover -html=coverage.out

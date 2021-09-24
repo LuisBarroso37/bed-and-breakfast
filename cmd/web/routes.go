@@ -5,8 +5,8 @@ import (
 
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/config"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/handlers"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 // Routes for our server
@@ -28,10 +28,12 @@ func routes(app *config.AppConfig) http.Handler {
 
 	mux.Get("/search-availability", handlers.Repo.SearchAvailability)
 	mux.Post("/search-availability", handlers.Repo.PostSearchAvailability)
-	mux.Post("/search-availability-json", handlers.Repo.AvailabilityJson)
+	mux.Post("/search-availability-json", handlers.Repo.SearchAvailabilityJson)
+	mux.Get("/choose-room/{id}", handlers.Repo.ChooseRoom)
+	mux.Get("/book-room", handlers.Repo.BookRoom)
 
 	mux.Get("/make-reservation", handlers.Repo.MakeReservation)
-	mux.Post("/make-reservation", handlers.Repo.CreateReservation)
+	mux.Post("/make-reservation", handlers.Repo.PostMakeReservation)
 	mux.Get("/reservation-summary", handlers.Repo.ReservationSummary)
 
 	// Serve static files

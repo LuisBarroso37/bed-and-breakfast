@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/config"
@@ -15,8 +16,8 @@ import (
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/models"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/render"
 	"github.com/alexedwards/scs/v2"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/justinas/nosurf"
 )
 
@@ -27,7 +28,7 @@ var pathToTemplates = "../../templates"
 // Custom functions passed to the GO templates
 var functions = template.FuncMap{}
 
-func getRoutes() http.Handler {
+func TestMain(m *testing.M) {
 	// What we want to store in the session in global config
 	gob.Register(models.Reservation{})
 
@@ -62,12 +63,16 @@ func getRoutes() http.Handler {
 	render.StoreAppConfig(&app)
 
 	// Create a repository and set it in the 'handlers' package
-	repo := NewRepository(&app)
+	repo := NewTestRepository(&app)
 	SetRepository(repo)
 
 	// Store app configuration in 'helpers' package
 	helpers.StoreAppConfig(&app)
 
+	os.Exit(m.Run())
+}
+
+func getRoutes() http.Handler {
 	// Create router
 	mux := chi.NewRouter()
 	
@@ -85,10 +90,10 @@ func getRoutes() http.Handler {
 	
 	mux.Get("/search-availability", Repo.SearchAvailability)
 	mux.Post("/search-availability", Repo.PostSearchAvailability)
-	mux.Post("/search-availability-json", Repo.AvailabilityJson)
+	mux.Post("/search-availability-json", Repo.SearchAvailabilityJson)
 	
 	mux.Get("/make-reservation", Repo.MakeReservation)
-	mux.Post("/make-reservation", Repo.CreateReservation)
+	mux.Post("/make-reservation", Repo.PostMakeReservation)
 	mux.Get("/reservation-summary", Repo.ReservationSummary)
 	
 	// Serve static files

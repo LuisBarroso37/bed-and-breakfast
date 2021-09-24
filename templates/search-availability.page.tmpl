@@ -22,7 +22,7 @@
                     required
                     class="form-control"
                     type="text"
-                    name="start"
+                    name="start_date"
                     placeholder="Arrival"
                   />
                 </div>
@@ -31,7 +31,7 @@
                     required
                     class="form-control"
                     type="text"
-                    name="end"
+                    name="end_date"
                     placeholder="Departure"
                   />
                 </div>
@@ -57,6 +57,7 @@
 
     const rangePicker = new DateRangePicker(elem, {
       format: 'yyyy-mm-dd',
+      minDate: new Date(),
     });
   </script>
 {{end}}

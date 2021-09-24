@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
+	"time"
 
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/config"
 )
@@ -21,11 +22,28 @@ func ClientError(w http.ResponseWriter, status int) {
 	http.Error(w, http.StatusText(status), status)
 }
 
-// Unexpected errors
+// Unexpected server errors
 func ServerError(w http.ResponseWriter, err error) {
 	// Stack trace and error message
 	trace := fmt.Sprintf("%s\n%s", err.Error(), debug.Stack())
 	
 	app.ErrorLog.Println(trace)
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+}
+
+// Parse strings into dates
+func ParseDates(w http.ResponseWriter, sd string, ed string) (time.Time, time.Time, error) {
+	dateFormat := "2006-01-02"
+
+	startDate, err := time.Parse(dateFormat, sd)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	endDate, err := time.Parse(dateFormat, ed)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	return startDate, endDate, nil
 }

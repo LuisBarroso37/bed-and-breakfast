@@ -46,17 +46,17 @@
 
 {{define "js"}}
   <script>
-    document.getElementById('check-availability-button').addEventListener('click', function () {
+    document.querySelector('#check-availability-button').addEventListener('click', function () {
       let html = `
               <form id="check-availability-form" action="" method="post" novalidate class="needs-validation">
                   <div class="row w-100" style="margin: 0;">
                       <div class="col">
                           <div class="row" id="reservation-dates-modal">
                               <div class="col">
-                                  <input disabled required class="form-control" type="text" name="start" id="start" placeholder="Arrival">
+                                  <input disabled required class="form-control" type="text" name="start_date" id="start-date" placeholder="Arrival">
                               </div>
                               <div class="col">
-                                  <input disabled required class="form-control" type="text" name="end" id="end" placeholder="Departure">
+                                  <input disabled required class="form-control" type="text" name="end_date" id="end-date" placeholder="Departure">
                               </div>
 
                           </div>
@@ -69,23 +69,25 @@
         title: 'Choose your dates',
         msg: html,
         willOpen: () => {
-          const elem = document.getElementById('reservation-dates-modal');
+          const elem = document.querySelector('#reservation-dates-modal');
           const rp = new DateRangePicker(elem, {
             format: 'yyyy-mm-dd',
             showOnFocus: true,
+            minDate: new Date(),
           });
         },
         didOpen: () => {
-          document.getElementById('start').removeAttribute('disabled');
-          document.getElementById('end').removeAttribute('disabled');
+          document.querySelector('#start-date').removeAttribute('disabled');
+          document.querySelector('#end-date').removeAttribute('disabled');
         },
         callback: function(result) {
           // Retrieve form values and create object to be sent to the server
           let form = document.querySelector('#check-availability-form');
           let formData = new FormData(form);
 
-          // Append CSRF token
+          // Append CSRF token and room id
           formData.append('csrf_token', '{{.CsrfToken}}');
+          formData.append('room_id', '1')
 
           // Make API call
           fetch('/search-availability-json', {
@@ -94,7 +96,25 @@
           })
             .then(res => res.json())
             .then(data => {
-              console.log(data);
+              if (data.ok) {
+                attention.custom({
+                  icon: 'success',
+                  showConfirmButton: false,
+                  msg: '<p>Room is available</p>'
+                    + '<p><a href="/book-room?id='
+                    + data.room_id
+                    + '&start_date='
+                    + data.start_date
+                    + '&end_date='
+                    + data.end_date
+                    + '" class="btn btn-primary">'
+                    + 'Book now!</a></p>'
+                });
+              } else {
+                attention.error({
+                  msg: 'Room is not available'
+                });
+              }
             });
         }
       });
