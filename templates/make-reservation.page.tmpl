@@ -14,11 +14,11 @@
           Departure: {{index .StringMap "end_date"}}
         </p>
 
-        <form method="post" action="/make-reservation" class="needs-validation" novalidate>
+        <form method="post" action="/make-reservation" class="needs-validation">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <input type="hidden" name="start_date" value="{{index .StringMap "start_date"}}">
           <input type="hidden" name="end_date" value="{{index .StringMap "end_date"}}">
-          <input type="hidden" name="end_date" value="{{$reservation.RoomID}}">
+          <input type="hidden" name="room_id" value="{{$reservation.RoomID}}">
 
           <div class="form-group mt-3">
             <label for="first_name">First Name:</label>

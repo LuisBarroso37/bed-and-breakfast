@@ -34,7 +34,8 @@ CREATE TABLE public.reservations (
     end_date date NOT NULL,
     room_id integer NOT NULL,
     created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    updated_at timestamp without time zone NOT NULL,
+    processed boolean DEFAULT false NOT NULL
 );
 
 

@@ -36,6 +36,24 @@ func routes(app *config.AppConfig) http.Handler {
 	mux.Post("/make-reservation", handlers.Repo.PostMakeReservation)
 	mux.Get("/reservation-summary", handlers.Repo.ReservationSummary)
 
+	mux.Get("/auth/login", handlers.Repo.ShowLogin)
+	mux.Post("/auth/login", handlers.Repo.PostShowLogin)
+	mux.Get("/auth/logout", handlers.Repo.Logout)
+
+	mux.Route("/admin", func(mux chi.Router) {
+		mux.Use(Auth)
+
+		mux.Get("/dashboard", handlers.Repo.AdminDashboard)
+		mux.Get("/new-reservations", handlers.Repo.AdminNewReservations)
+		mux.Get("/all-reservations", handlers.Repo.AdminAllReservations)
+		mux.Get("/reservations-calendar", handlers.Repo.AdminReservationsCalendar)
+		mux.Post("/reservations-calendar", handlers.Repo.AdminPostReservationsCalendar)
+		mux.Get("/reservations/{src}/{id}", handlers.Repo.AdminShowReservation)
+		mux.Post("/reservations/{src}/{id}", handlers.Repo.AdminPostShowReservation)
+		mux.Get("/process-reservation/{src}/{id}", handlers.Repo.AdminProcessReservation)
+		mux.Get("/delete-reservation/{src}/{id}", handlers.Repo.AdminDeleteReservation)
+	})
+
 	// Serve static files
 	fileServer := http.FileServer(http.Dir("./static/"))
 	mux.Handle("/static/*", http.StripPrefix("/static", fileServer))

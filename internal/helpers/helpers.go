@@ -47,3 +47,8 @@ func ParseDates(w http.ResponseWriter, sd string, ed string) (time.Time, time.Ti
 
 	return startDate, endDate, nil
 }
+
+// Check if user is authenticated
+func IsAuthenticated(r *http.Request) bool {
+	return app.Session.Exists(r.Context(), "user_id")
+}

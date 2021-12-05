@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/config"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/models"
@@ -15,7 +16,11 @@ import (
 )
 
 // Custom functions passed to the GO templates
-var functions = template.FuncMap{}
+var functions = template.FuncMap{
+	"formatDate": FormatDate,
+	"convertDateToFormat": ConvertDateToFormat,
+	"iterate": Iterate,
+}
 
 var app *config.AppConfig
 var pathToTemplates = "./templates"
@@ -23,6 +28,28 @@ var pathToTemplates = "./templates"
 // Store app configuration
 func StoreAppConfig(appConfig *config.AppConfig) {
 	app = appConfig
+}
+
+// Converts timestamp to YYYY-MM-DD
+func FormatDate(t time.Time) string {
+	return t.Format("2006-01-02")
+}
+
+// Converts date to given format
+func ConvertDateToFormat(t time.Time, formatString string) string {
+	return t.Format(formatString)
+}
+
+// Returns a slice of integers, starting at 0 and going to count
+func Iterate(count int) []int {
+	var i int
+	var items []int
+
+	for i = 1; i <= count; i++ {
+		items = append(items, i)
+	}
+
+	return items
 }
 
 // Get all template pages
@@ -72,6 +99,10 @@ func addDefaultData(templateData *models.TemplateData, r *http.Request) *models.
 	templateData.Warning = app.Session.PopString(r.Context(), "warning")
 	templateData.Error = app.Session.PopString(r.Context(), "error")
 	
+	if app.Session.Exists(r.Context(), "user_id") {
+		templateData.IsAuthenticated = true
+	}
+
 	return templateData
 }
 

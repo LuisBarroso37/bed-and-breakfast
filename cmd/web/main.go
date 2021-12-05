@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -30,7 +31,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Close SQL connection pool and mail channel
 	defer pool.SQL.Close()
+	defer close(app.MailChan)
+
+	// Run mail server to listen for email messages
+	log.Println("Starting mail server...")
+	listenForMail()
 
   // Create server
 	server := &http.Server{
@@ -47,15 +54,38 @@ func main() {
 }
 
 func run() (*driver.DB, error) {
-	// What we want to store in the session in global config
+	// Register the data types that we will store in the `Session` object
 	gob.Register(models.Reservation{})
 	gob.Register(models.Room{})
 	gob.Register(models.RoomRestriction{})
 	gob.Register(models.User{})
 	gob.Register(models.Restriction{})
- 
+	gob.Register(map[string]int{})
+
+	// Instantiate and store a channel to send email messages
+	mailChan := make(chan models.MailData)
+	app.MailChan = mailChan
+
+	// Get configuration from env variables
+	inProduction := flag.Bool("production", true, "Aplication is in production")
+	useCache := flag.Bool("cache", true, "Use template cache")
+	dbHost := flag.String("dbhost", "localhost", "Database host")
+	dbName := flag.String("dbname", "", "Database name")
+	dbUser := flag.String("dbuser", "", "Database user")
+	dbPassword := flag.String("dbpassword", "", "Database password")
+	dbPort := flag.String("dbport", "5432", "Database port")
+	dbSSL := flag.String("dbssl", "disable", "Database SSL settings (disable, prefer, require)")
+
+	flag.Parse()
+
+	// Make sure all required env variables are set
+	if *dbName == "" || *dbUser == "" || *dbPassword == "" {
+		fmt.Println("Missing required flags")
+		os.Exit(1)
+	}
+
 	// Change this to true when in production
-	app.InProduction = false
+	app.InProduction = *inProduction
 
 	// Setup info and error loggers
 	app.InfoLog = log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
@@ -73,7 +103,16 @@ func run() (*driver.DB, error) {
 
 	// Connect to database
 	log.Println("Connecting to database...")
-	pool, err := driver.ConnectSQL("host=localhost port=5432 dbname=bookings user=postgres password=password")
+	connectionString := fmt.Sprintf(
+		"host=%s port=%s dbname=%s user=%s password=%s sslmode=%s",
+		*dbHost, 
+		*dbPort, 
+		*dbName, 
+		*dbUser, 
+		*dbPassword,
+		*dbSSL,
+	)
+	pool, err := driver.ConnectSQL(connectionString)
 	if err != nil {
 		log.Fatal("Cannot connect to database")
 	}
@@ -89,8 +128,8 @@ func run() (*driver.DB, error) {
 
 	// Store template pages in the app cache
 	app.TemplateCache = templates
-	app.UseCache = false
-	
+	app.UseCache = *useCache
+
 	// Store app configuration in 'render' package
 	render.StoreAppConfig(&app)
 

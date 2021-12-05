@@ -8,10 +8,6 @@ import (
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/models"
 )
 
-func (pgRepo *testDBRepository) AllUsers() bool {
-	return true
-}
-
 // Inserts a reservation into the database
 func (pgRepo *testDBRepository) InsertReservation(reservation models.Reservation) (int, error) {
 	// If room id is 2 then fail, otherwise pass
@@ -111,4 +107,125 @@ func (pgRepo *testDBRepository) GetRoomByID(id int) (models.Room, error) {
 	}
 
 	return room, nil
+}
+
+// Gets user by id
+func (pgRepo *testDBRepository) GetUserByID(id int) (models.User, error) {
+	var user models.User
+
+	return user, nil
+}
+
+// Updates a user
+func (pgRepo *testDBRepository) UpdateUser(user models.User) error {
+	return nil
+}
+
+// Authenticates a user
+func (pgRepo *testDBRepository) Authenticate(email, password string) (int, string, error) {
+	if email == "me@here.com" {
+		return 1, "", nil
+	}
+
+	return 0, "", errors.New("not authenticated")
+}
+
+// Gets a list of all reservations
+func (pgRepo *testDBRepository) GetAllReservations() ([]models.Reservation, error) {
+	var reservations []models.Reservation
+
+	return reservations, nil
+}
+
+// Gets a list of all new reservations
+func (pgRepo *testDBRepository) GetNewReservations() ([]models.Reservation, error) {
+	var reservations []models.Reservation
+
+	return reservations, nil
+}
+
+// Gets a list of all new reservations
+func (pgRepo *testDBRepository) GetReservationByID(id int) (models.Reservation, error) {
+	var reservation models.Reservation
+
+	// Fake reservaton not found
+	if id > 10 {
+		return reservation, errors.New("reservation not found")
+	}
+
+	return reservation, nil
+}
+
+// Updates a reservation
+func (pgRepo *testDBRepository) UpdateReservation(reservation models.Reservation) error {
+	// Fake failing to update reservation
+	if reservation.FirstName == "Invalid" {
+		return errors.New("reservation not updated")
+	}
+
+	return nil
+}
+
+// Deletes a reservation
+func (pgRepo *testDBRepository) DeleteReservation(id int) error {
+	if id > 10 {
+		return errors.New("reservation not found")
+	}
+	
+	return nil
+}
+
+// Updates processed status of a reservation with given id
+func (pgRepo *testDBRepository) UpdateProcessedForReservation(id int, processed bool) error {
+	if id > 10 {
+		return errors.New("reservation not found")
+	}
+
+	return nil
+}
+
+// Gets all rooms
+func (pgRepo *testDBRepository) GetAllRooms() ([]models.Room, error) {
+	var rooms []models.Room
+	rooms = append(rooms, models.Room{ ID: 1 })
+
+	return rooms, nil
+}
+
+
+// Gets restrictions for a given room by date range
+func (pgRepo *testDBRepository) GetRestrictionsForRoomByDate(roomID int, startDate, endDate time.Time) ([]models.RoomRestriction, error) {
+	var restrictions []models.RoomRestriction
+
+	// Add a block
+	restrictions = append(restrictions, models.RoomRestriction{
+		ID:            1,
+		StartDate:     time.Now(),
+		EndDate:       time.Now().AddDate(0, 0, 1),
+		RoomID:        1,
+		ReservationID: 0,
+		RestrictionID: 2,
+	})
+
+	// Add a reservation
+	restrictions = append(restrictions, models.RoomRestriction{
+		ID:            2,
+		StartDate:     time.Now().AddDate(0,0,2),
+		EndDate:       time.Now().AddDate(0, 0, 3),
+		RoomID:        1,
+		ReservationID: 1,
+		RestrictionID: 1,
+	})
+
+	return restrictions, nil
+}
+
+// Inserts an owner block as room restriction for given room
+func (pgRepo *testDBRepository) InsertBlockForRoom(id int, startDate time.Time) error {
+	return nil
+}
+
+// Deletes an owner block from room restrictions
+func (pgRepo *testDBRepository) DeleteBlockByID(id int) error {
+	return nil
 }

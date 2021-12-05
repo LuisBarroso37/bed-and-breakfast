@@ -94,7 +94,7 @@ function checkAvailabilityByRoom(roomId) {
     .querySelector('#check-availability-button')
     .addEventListener('click', function () {
       let html = `
-            <form id="check-availability-form" action="" method="post" novalidate class="needs-validation">
+            <form id="check-availability-form" action="" method="post" class="needs-validation">
                 <div class="row w-100" style="margin: 0;">
                     <div class="col">
                         <div class="row" id="reservation-dates-modal">

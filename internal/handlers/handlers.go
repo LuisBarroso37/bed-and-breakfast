@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/config"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/driver"
@@ -14,6 +16,7 @@ import (
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/render"
 	"github.com/LuisBarroso37/bed-and-breakfast/internal/repository"
 	dbrepository "github.com/LuisBarroso37/bed-and-breakfast/internal/repository/db-repository"
+	"github.com/go-chi/chi/v5"
 )
 
 type Repository struct {
@@ -74,7 +77,7 @@ func (repo *Repository) MakeReservation(w http.ResponseWriter, r *http.Request) 
 	reservation, ok := repo.App.Session.Get(r.Context(), "reservation").(models.Reservation)
 	if !ok {
 		repo.App.Session.Put(r.Context(), "error", "Can't get reservation from session")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -82,7 +85,7 @@ func (repo *Repository) MakeReservation(w http.ResponseWriter, r *http.Request) 
 	room, err := repo.DB.GetRoomByID(reservation.RoomID)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't find room with given id")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -116,7 +119,7 @@ func (repo *Repository) PostMakeReservation(w http.ResponseWriter, r *http.Reque
 	err := r.ParseForm()
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't parse form")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -126,7 +129,7 @@ func (repo *Repository) PostMakeReservation(w http.ResponseWriter, r *http.Reque
 	startDate, endDate, err := helpers.ParseDates(w, sd, ed)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't parse dates")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -134,7 +137,15 @@ func (repo *Repository) PostMakeReservation(w http.ResponseWriter, r *http.Reque
 	roomID, err := strconv.Atoi(r.Form.Get("room_id"))
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Invalid room id")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	// Get room information from room id
+	room, err := repo.DB.GetRoomByID(roomID)
+	if err != nil {
+		repo.App.Session.Put(r.Context(), "error", "can't find room!")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -145,6 +156,7 @@ func (repo *Repository) PostMakeReservation(w http.ResponseWriter, r *http.Reque
 		Phone:     r.Form.Get("phone"),
 		Email:     r.Form.Get("email"),
 		StartDate: startDate,
+		Room: room,
 		EndDate:   endDate,
 		RoomID:    roomID,
 	}
@@ -160,10 +172,14 @@ func (repo *Repository) PostMakeReservation(w http.ResponseWriter, r *http.Reque
 		data := make(map[string]interface{})
 		data["reservation"] = reservation
 
-		http.Error(w, "Invalid form data", http.StatusSeeOther)
+		stringMap := make(map[string]string)
+		stringMap["start_date"] = sd
+		stringMap["end_date"] = ed
+
 		render.RenderTemplate(w, r, "make-reservation.page.tmpl", &models.TemplateData{
 			Form: form,
 			Data: data,
+			StringMap: stringMap,
 		})
 
 		return
@@ -173,7 +189,7 @@ func (repo *Repository) PostMakeReservation(w http.ResponseWriter, r *http.Reque
 	reservationID, err := repo.DB.InsertReservation(reservation)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't insert reservation into the database")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -189,9 +205,49 @@ func (repo *Repository) PostMakeReservation(w http.ResponseWriter, r *http.Reque
 	err = repo.DB.InsertRoomRestriction(roomRestriction)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't insert room restriction into the database")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+
+	// Send email to guest
+	htmlMessage := fmt.Sprintf(`
+			<strong>Reservation confirmation</strong><br>
+			Dear %s, <br>
+			This is to confirm your reservation of the %s from %s to %s.
+		`, reservation.FirstName,
+		reservation.Room.RoomName, 
+		reservation.StartDate.Format("2006-01-02"), 
+		reservation.EndDate.Format("2006-01-02"),
+	)
+
+	msg := models.MailData{
+		To: reservation.Email,
+		From: "me@here.com",
+		Subject: "Reservation confirmation",
+		Content: htmlMessage,
+		Template: "basic.html",
+	}
+	repo.App.MailChan <- msg
+
+	// Send email to owner
+	htmlMessage = fmt.Sprintf(`
+			<strong>Reservation confirmation</strong><br>
+			Dear %s:, <br>
+			This is to confirm your reservation of the %s from %s to %s.
+		`, reservation.FirstName,
+		reservation.Room.RoomName, 
+		reservation.StartDate.Format("2006-01-02"), 
+		reservation.EndDate.Format("2006-01-02"),
+	)
+
+	msg = models.MailData{
+		To: "me@here.com",
+		From: "me@here.com",
+		Subject: "Reservation confirmation",
+		Content: htmlMessage,
+		Template: "basic.html",
+	}
+	repo.App.MailChan <- msg
 
 	// Update `reservation` in `Session` object
 	repo.App.Session.Put(r.Context(), "reservation", reservation)
@@ -211,7 +267,7 @@ func (repo *Repository) PostSearchAvailability(w http.ResponseWriter, r *http.Re
 	err := r.ParseForm()
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't parse form")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -221,7 +277,7 @@ func (repo *Repository) PostSearchAvailability(w http.ResponseWriter, r *http.Re
 	startDate, endDate, err := helpers.ParseDates(w, sd, ed)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't parse dates")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -229,7 +285,7 @@ func (repo *Repository) PostSearchAvailability(w http.ResponseWriter, r *http.Re
 	rooms, err := repo.DB.SearchAvailabilityForAllRooms(startDate, endDate)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't get available rooms")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -334,7 +390,7 @@ func (repo *Repository) ReservationSummary(w http.ResponseWriter, r *http.Reques
 	reservation, ok := repo.App.Session.Get(r.Context(), "reservation").(models.Reservation) // Type assertion
 	if !ok {
 		repo.App.Session.Put(r.Context(), "error", "Can't get reservation from session")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -367,14 +423,14 @@ func (repo *Repository) ChooseRoom(w http.ResponseWriter, r *http.Request) {
 	exploded := strings.Split(r.RequestURI, "/")
 	if len(exploded) != 3 {
 		repo.App.Session.Put(r.Context(), "error", "Missing url parameter")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
 	roomID, err := strconv.Atoi(exploded[2])
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Missing url parameter")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -383,7 +439,7 @@ func (repo *Repository) ChooseRoom(w http.ResponseWriter, r *http.Request) {
 	reservation, ok := repo.App.Session.Get(r.Context(), "reservation").(models.Reservation)
 	if !ok {
 		repo.App.Session.Put(r.Context(), "error", "Can't get reservation from session")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -403,7 +459,7 @@ func (repo *Repository) BookRoom(w http.ResponseWriter, r *http.Request) {
 	roomID, err := strconv.Atoi(r.URL.Query().Get("id"))
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Missing query parameter")
-		http.Redirect(w, r, "/search-availability", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/search-availability", http.StatusSeeOther)
 		return
 	}
 
@@ -413,7 +469,7 @@ func (repo *Repository) BookRoom(w http.ResponseWriter, r *http.Request) {
 	startDate, endDate, err := helpers.ParseDates(w, sd, ed)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Missing query parameter")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/search-availability", http.StatusSeeOther)
 		return
 	}
 
@@ -421,7 +477,7 @@ func (repo *Repository) BookRoom(w http.ResponseWriter, r *http.Request) {
 	room, err := repo.DB.GetRoomByID(roomID)
 	if err != nil {
 		repo.App.Session.Put(r.Context(), "error", "Can't get room from database")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "/search-availability", http.StatusSeeOther)
 		return
 	}
 
@@ -437,4 +493,482 @@ func (repo *Repository) BookRoom(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect user to `make-reservation` page
 	http.Redirect(w, r, "/make-reservation", http.StatusSeeOther)
+}
+
+// ShowLogin is the login page handler
+func (repo *Repository) ShowLogin(w http.ResponseWriter, r *http.Request) {
+	render.RenderTemplate(w, r, "login.page.tmpl", &models.TemplateData{
+		Form: forms.New(nil),
+	})
+}
+
+
+// Handler to login user given a valid email and password
+func (repo *Repository) PostShowLogin(w http.ResponseWriter, r *http.Request) {
+	// Prevent session fixation attack
+	err := repo.App.Session.RenewToken(r.Context())
+	if err != nil {
+		repo.App.Session.Put(r.Context(), "error", "Error renewing Session token")
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+	}
+
+	err = r.ParseForm()
+	if err != nil {
+		repo.App.Session.Put(r.Context(), "error", "Can't parse form")
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+	}
+
+	form := forms.New(r.PostForm)
+	form.RequiredFields("email", "password")
+	form.IsEmail("email")
+	if !form.IsValid() {
+		// Display errors in Login page
+		render.RenderTemplate(w, r, "login.page.tmpl", &models.TemplateData{
+			Form: form,
+		})
+		return
+	}
+
+	// Extract email and password from form data
+	email := r.Form.Get("email")
+	password := r.Form.Get("password")
+
+	// Authenticate user
+	id, _, err := repo.DB.Authenticate(email, password)
+	if err != nil {
+		repo.App.Session.Put(r.Context(), "error", "Invalid login credentials")
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	// Store user id in `Session`
+	repo.App.Session.Put(r.Context(), "user_id", id)
+	repo.App.Session.Put(r.Context(), "success", "Logged in successfully")
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// Logout user
+func (repo *Repository) Logout(w http.ResponseWriter, r *http.Request) {
+	repo.App.Session.Destroy(r.Context())
+	repo.App.Session.RenewToken(r.Context())
+
+	http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+}
+
+// AdminDahboard is the admin dashboard page handler
+func (repo *Repository) AdminDashboard(w http.ResponseWriter, r *http.Request) {
+	render.RenderTemplate(w, r, "admin-dashboard.page.tmpl", &models.TemplateData{})
+}
+
+// AdminNewReservations is the new reservations page handler in the admin dashboard
+func (repo *Repository) AdminNewReservations(w http.ResponseWriter, r *http.Request) {
+	reservations, err := repo.DB.GetNewReservations()
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	data := make(map[string]interface{})
+	data["reservations"] = reservations
+	
+	render.RenderTemplate(w, r, "admin-new-reservations.page.tmpl", &models.TemplateData{
+		Data: data,
+	})
+}
+
+// AdminAllReservations is the all-reservations page handler in the admin dashboard
+func (repo *Repository) AdminAllReservations(w http.ResponseWriter, r *http.Request) {
+	reservations, err := repo.DB.GetAllReservations()
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	data := make(map[string]interface{})
+	data["reservations"] = reservations
+	
+	render.RenderTemplate(w, r, "admin-all-reservations.page.tmpl", &models.TemplateData{
+		Data: data,
+	})
+}
+
+// AdminShowReservation is the show reservation page handler in the admin dashboard
+func (repo *Repository) AdminShowReservation(w http.ResponseWriter, r *http.Request) {
+	// Extract source (all or new) and id from URL
+	src := chi.URLParam(r, "src")
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	currentMonth := r.URL.Query().Get("m")
+	currentYear := r.URL.Query().Get("y")
+
+	// Create string map and add it to the template
+	stringMap := make(map[string]string)
+	stringMap["src"] = src
+	stringMap["current_month"] = currentMonth
+	stringMap["current_year"] = currentYear
+
+	// Get reservation from database
+	reservation, err := repo.DB.GetReservationByID(id)
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Create data map and add it to the template
+	data := make(map[string]interface{})
+	data["reservation"] = reservation
+
+	render.RenderTemplate(w, r, "admin-show-reservation.page.tmpl", &models.TemplateData{
+		StringMap: stringMap,
+		Data: data,
+		Form: forms.New(nil),
+	})
+}
+
+// Handler to update reservation with received form data
+func (repo *Repository) AdminPostShowReservation(w http.ResponseWriter, r *http.Request) {
+	// Parse form data 
+	err := r.ParseForm()
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Extract source (all or new) and id from URL
+	src := chi.URLParam(r, "src")
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Create string map and add it to the template
+	stringMap := make(map[string]string)
+	stringMap["src"] = src
+
+	reservation, err := repo.DB.GetReservationByID(id)
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Store form data in the reservation
+	reservation.FirstName = r.Form.Get("first_name")
+	reservation.LastName = r.Form.Get("last_name")
+	reservation.Email = r.Form.Get("email")
+	reservation.Phone = r.Form.Get("phone")
+
+	// Validate form data and add any errors that might exist to `form` variable
+	form := forms.New(r.PostForm)
+	form.RequiredFields("first_name", "last_name", "email", "phone")
+	form.MinLength("first_name", 2)
+	form.MinLength("last_name", 2)
+	form.IsEmail("email")
+
+	// Rerender make reservation form with updated error information
+	if !form.IsValid() {
+		data := make(map[string]interface{})
+		data["reservation"] = reservation
+
+		render.RenderTemplate(w, r, "admin-show-reservation.page.tmpl", &models.TemplateData{
+			StringMap: stringMap,
+			Form: form,
+			Data: data,
+		})
+
+		return
+	}
+
+	// Update reservation
+	err = repo.DB.UpdateReservation(reservation)
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Store success message in `Session`
+	repo.App.Session.Put(r.Context(), "success", "Reservation successfully updated")
+
+	// Get month and year from form (if user came from reservations calendar)
+	month := r.Form.Get("month")
+	year := r.Form.Get("year")
+
+	if year == "" {
+		http.Redirect(w, r, fmt.Sprintf("/admin/%s-reservations", src), http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("/admin/reservations-calendar?y=%s&m=%s", year, month), http.StatusSeeOther)
+	}
+}
+
+// AdminReservationsCalendar is the reservations calendar page handler in the admin dashboard
+func (repo *Repository) AdminReservationsCalendar(w http.ResponseWriter, r *http.Request) {
+	// Get current date
+	currentDate := time.Now()
+
+	// Extract year and month from request's query parameters and convert them into integers, if they exist
+	if r.URL.Query().Get("y") != "" {
+		year, err := strconv.Atoi(r.URL.Query().Get("y"))
+		if err != nil {
+			helpers.ServerError(w, err)
+			return
+		}
+
+		month, err := strconv.Atoi(r.URL.Query().Get("m"))
+		if err != nil {
+			helpers.ServerError(w, err)
+			return
+		}
+
+		// Set `currentDate` to have the given year and month
+		currentDate = time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	}
+
+	// Store current date (time.Time) in data map
+	data := make(map[string]interface{})
+	data["current_date"] = currentDate
+
+	// Add 1 month to current date
+	next := currentDate.AddDate(0, 1, 0)
+	// Subtract 1 month to current date
+	last := currentDate.AddDate(0, -1, 0)
+
+	// Format dates
+	nextMonth := next.Format("01")
+	nextMonthYear := next.Format("2006")
+	lastMonth := last.Format("01")
+	lastMonthYear := last.Format("2006")
+
+	// Store dates in string map
+	stringMap := make(map[string]string)
+	stringMap["next_month"] = nextMonth
+	stringMap["next_month_year"] = nextMonthYear
+	stringMap["last_month"] = lastMonth
+	stringMap["last_month_year"] = lastMonthYear
+	stringMap["current_month"] = currentDate.Format("01")
+	stringMap["current_month_year"] = currentDate.Format("2006")
+
+	// Store number of days in the current month in integer map
+	currentYear, currentMonth, _ := currentDate.Date()
+	currentLocation := currentDate.Location()
+	firstDayOfMonth := time.Date(currentYear, currentMonth, 1, 0, 0, 0, 0, currentLocation)
+	lastDayOfMonth := firstDayOfMonth.AddDate(0, 1, -1)
+	
+	intMap := make(map[string]int)
+	intMap["days_in_month"] = lastDayOfMonth.Day()
+
+	// Get all rooms
+	rooms, err := repo.DB.GetAllRooms()
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Store rooms in data map
+	data["rooms"] = rooms
+
+	for _, room := range rooms {
+		// Create reservation and owner block maps
+		reservationMap := make(map[string]int)
+		ownerBlockMap := make(map[string]int)
+
+		// Add an entry in the maps for every day of the month
+		for day := firstDayOfMonth; !day.After(lastDayOfMonth); day = day.AddDate(0, 0, 1) {
+			reservationMap[day.Format("2006-01-2")] = 0
+			ownerBlockMap[day.Format("2006-01-2")] = 0
+		}
+
+		// Get all restrictions for the room in the current month
+		restrictions, err := repo.DB.GetRestrictionsForRoomByDate(room.ID, firstDayOfMonth, lastDayOfMonth)
+		if err != nil {
+			helpers.ServerError(w, err)
+			return
+		}
+
+		for _, restriction := range restrictions {
+			// If reservation id is bigger than 0, it is a reservation
+			if restriction.ReservationID > 0 {
+				// Loop through the dates between the start date and the end date of the restriction
+				for day := restriction.StartDate; !day.After(restriction.EndDate); day = day.AddDate(0, 0, 1) {
+					reservationMap[day.Format("2006-01-2")] = restriction.ReservationID
+				}
+			} else {
+				// Otherwise it is an owner block
+				// Each block is 1 day long
+				ownerBlockMap[restriction.StartDate.Format("2006-01-2")] = restriction.ID
+			}
+		}
+
+		// Store maps in the data map with a reference to the room
+		data[fmt.Sprintf("reservation_map_%d", room.ID)] = reservationMap
+		data[fmt.Sprintf("block_map_%d", room.ID)] = ownerBlockMap
+
+		// Store owner block map in `Session`.
+		// This will be used in the POST handler to compare the calendar that was first rendered 
+		// with the updated calendar after the user interacts with the calendar
+		repo.App.Session.Put(r.Context(), fmt.Sprintf("block_map_%d", room.ID), ownerBlockMap)
+	}
+
+	render.RenderTemplate(w, r, "admin-reservations-calendar.page.tmpl", &models.TemplateData{
+		StringMap: stringMap,
+		IntMap: intMap,
+		Data: data,
+	})
+}
+
+// Handler to mark a reservation as processed
+func (repo *Repository) AdminProcessReservation(w http.ResponseWriter, r *http.Request) {
+	// Extract source (all or new) and id from URL
+	src := chi.URLParam(r, "src")
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Extract query parameters
+	year := r.URL.Query().Get("y")
+	month := r.URL.Query().Get("m")
+
+	// Mark reservation as processed
+	err = repo.DB.UpdateProcessedForReservation(id, true)
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Store success message in `Session`
+	repo.App.Session.Put(r.Context(), "success", "Reservation marked as processed")
+
+	if year == "" && src == "calendar" {
+		http.Redirect(w, r, "/admin/reservations-calendar", http.StatusSeeOther)
+	} else if year == "" && src != "calendar" {
+		http.Redirect(w, r, fmt.Sprintf("/admin/%s-reservations", src), http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("/admin/reservations-calendar?y=%s&m=%s", year, month), http.StatusSeeOther)
+	}
+}
+
+// Handler to delete a reservation
+func (repo *Repository) AdminDeleteReservation(w http.ResponseWriter, r *http.Request) {
+	// Extract source (all or new) and id from URL
+	src := chi.URLParam(r, "src")
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Delete the reservation
+	err = repo.DB.DeleteReservation(id)
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Extract query parameters
+	year := r.URL.Query().Get("y")
+	month := r.URL.Query().Get("m")
+
+	// Store success message in `Session`
+	repo.App.Session.Put(r.Context(), "success", "Reservation marked as processed")
+
+	if year == "" && src == "calendar" {
+		http.Redirect(w, r, "/admin/reservations-calendar", http.StatusSeeOther)
+	} else if year == "" && src != "calendar" {
+		http.Redirect(w, r, fmt.Sprintf("/admin/%s-reservations", src), http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("/admin/reservations-calendar?y=%s&m=%s", year, month), http.StatusSeeOther)
+	}
+}
+
+// Handler to save new blocks picked by the owner (block dates so no reservations can be done for the given dates)
+func (repo *Repository) AdminPostReservationsCalendar(w http.ResponseWriter, r *http.Request) {
+	// Parse the form
+	err := r.ParseForm()
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Get current month and year that user is in while on the reservations calendar page
+	currentMonth, err := strconv.Atoi(r.Form.Get("m"))
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	currentYear, err := strconv.Atoi(r.Form.Get("y"))
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	// Get all rooms
+	rooms, err := repo.DB.GetAllRooms()
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	form := forms.New(r.PostForm)
+
+	for _, room := range rooms {
+		// Get owner block map from `Session`
+		ownerBlockMap := repo.App.Session.Get(r.Context(), fmt.Sprintf("block_map_%d", room.ID)).(map[string]int)
+		// Loop through map and if we have an entry in the map that
+		// does not exist in our form data and the restriction id > 0,
+		// then it is a block we need to remove
+		for date, value := range ownerBlockMap {
+			// Only pay attention to values > 0 and that are not in the form data
+			if value == 0 {
+				continue
+			}
+
+			if !form.Has(fmt.Sprintf("remove_block_%d_%s", room.ID, date)) {
+				// Delete the restriction by id
+				err := repo.DB.DeleteBlockByID(value)
+				if err != nil {
+					helpers.ServerError(w, err)
+					return
+				}
+			}
+		}
+	}
+	
+	// Loop through form data and only pay attention to properties
+	// with prefix 'add_block'. These are the blocks that we have to
+	// store in the database, since they are not present in the `ownerBlockMap`
+	for name := range r.PostForm {
+		if strings.HasPrefix(name, "add_block") {
+			// Split `name` by '_' and get room id and date
+			exploded := strings.Split(name, "_")
+
+			date, err := time.Parse("2006-01-2", exploded[3])
+			if err != nil {
+				helpers.ServerError(w, err)
+				return
+			}
+
+			roomID, err := strconv.Atoi(exploded[2])
+			if err != nil {
+				helpers.ServerError(w, err)
+				return
+			}
+
+			// Insert owner block as room restriction for given room
+			err = repo.DB.InsertBlockForRoom(roomID, date)
+			if err != nil {
+				helpers.ServerError(w, err)
+				return
+			}
+		}
+	}
+
+	// Store success message in `Session` and redirect user to exact same page user was in
+	repo.App.Session.Put(r.Context(), "success", "Changes saved")
+	http.Redirect(w, r, fmt.Sprintf("/admin/reservations-calendar?y=%d&m=%d", currentYear, currentMonth), http.StatusSeeOther)
 }

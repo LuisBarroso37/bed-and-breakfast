@@ -26,11 +26,20 @@ var session *scs.SessionManager
 var pathToTemplates = "../../templates"
 
 // Custom functions passed to the GO templates
-var functions = template.FuncMap{}
+var functions = template.FuncMap{
+	"formatDate": render.FormatDate,
+	"convertDateToFormat": render.ConvertDateToFormat,
+	"iterate": render.Iterate,
+}
 
 func TestMain(m *testing.M) {
 	// What we want to store in the session in global config
 	gob.Register(models.Reservation{})
+	gob.Register(models.Room{})
+	gob.Register(models.RoomRestriction{})
+	gob.Register(models.User{})
+	gob.Register(models.Restriction{})
+	gob.Register(map[string]int{})
 
 	// Change this to true when in production
 	app.InProduction = false
@@ -48,6 +57,13 @@ func TestMain(m *testing.M) {
 
 	// Set session in global config
 	app.Session = session
+
+	// Set email server
+	mailChan := make(chan models.MailData)
+	app.MailChan = mailChan
+	defer close(mailChan)
+
+	listenForMail()
 
 	// Get all template pages
 	templates, err := GetTemplatePages()
@@ -70,6 +86,14 @@ func TestMain(m *testing.M) {
 	helpers.StoreAppConfig(&app)
 
 	os.Exit(m.Run())
+}
+
+func listenForMail() {
+	go func() {
+		for {
+			<- app.MailChan
+		}
+	}()
 }
 
 func getRoutes() http.Handler {
@@ -96,6 +120,22 @@ func getRoutes() http.Handler {
 	mux.Post("/make-reservation", Repo.PostMakeReservation)
 	mux.Get("/reservation-summary", Repo.ReservationSummary)
 	
+	mux.Get("/auth/login", Repo.ShowLogin)
+	mux.Post("/auth/login", Repo.PostShowLogin)
+	mux.Get("/auth/logout", Repo.Logout)
+
+	mux.Route("/admin", func(mux chi.Router) {
+		mux.Get("/dashboard", Repo.AdminDashboard)
+		mux.Get("/new-reservations", Repo.AdminNewReservations)
+		mux.Get("/all-reservations", Repo.AdminAllReservations)
+		mux.Get("/reservations-calendar", Repo.AdminReservationsCalendar)
+		mux.Post("/reservations-calendar", Repo.AdminPostReservationsCalendar)
+		mux.Get("/reservations/{src}/{id}", Repo.AdminShowReservation)
+		mux.Post("/reservations/{src}/{id}", Repo.AdminPostShowReservation)
+		mux.Get("/process-reservation/{src}/{id}", Repo.AdminProcessReservation)
+		mux.Get("/delete-reservation/{src}/{id}", Repo.AdminDeleteReservation)
+	})
+
 	// Serve static files
 	fileServer := http.FileServer(http.Dir("./static/"))
 	mux.Handle("/static/*", http.StripPrefix("/static", fileServer))
